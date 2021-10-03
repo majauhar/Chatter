@@ -1,18 +1,4 @@
-/**
- * Copyright 2015 Google Inc. All Rights Reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+
 'use strict';
 
 import { initializeApp } from 'firebase/app';
@@ -38,14 +24,20 @@ import {
   orderByKey,
   orderByValue,
   limitToLast,
+  equalTo,
+  onDisconnect,
 } from 'firebase/database';
-
-
 
 
 import { getFirebaseConfig } from './firebase-config.js';
 
-// Signs-in Friendly Chat.
+var recepient_uid = 0;
+
+function setRecepientId(recep_id) {
+  recepient_uid = recep_id;
+}
+
+// Signs-in Chatter
 async function signIn() {
   var provider = new GoogleAuthProvider();
   if(provider){
@@ -55,12 +47,11 @@ async function signIn() {
       profilePicUrl: getProfilePicUrl(),
       uid: getAuth().currentUser.uid,
       online: true,
-      on_tab: true,
+      on_tab: null,
     });
-
-loadMessages();
-loadUsers();
   }
+  loadUsers();
+  // loadMessages();
 }
 
 // Signs-out of Friendly Chat.
@@ -72,9 +63,6 @@ function signOutUser() {
     online: false
   });
   location.reload();
-  // resetMaterialTextfield(messageListElement);
-  // resetMaterialTextfield(userListElement);
-
 }
 
 // Initiate firebase auth
@@ -100,13 +88,20 @@ function isUserSignedIn() {
 // Saves a new message on the Realtime dB.
 async function saveMessage(messageText) {
   try {
-    await push(ref(getDatabase(), 'messages/'), {
+    let newRef = await push(ref(getDatabase(), 'messages/'), {
       name: getUserName(),
       text: messageText,
       profilePicUrl: getProfilePicUrl(),
       timestamp: serverTimestamp(),
       sender_id: getAuth().currentUser.uid,
-      receiver_id: null
+      receiver_id: recepient_uid,
+      sent: false,
+      received: false,
+      seen: false,
+    }).then(newRef => {
+      // console.log('New message added successfully!');
+      // console.log(newRef);
+      update(newRef, {sent:true});
     });
   }
   catch(error) {
@@ -115,34 +110,54 @@ async function saveMessage(messageText) {
 }
 
 // Loads chat messages history and listens for upcoming ones.
-function loadMessages() {
-
-  const recentMessageQuery = query(ref(getDatabase(), 'messages/'), orderByChild('timestamp'), limitToLast(5));
+function loadMessages(recep_uid) {
+  document.getElementById('messages').innerHTML = "";
+  setRecepientId(recep_uid);
+  const recentMessageQuery = query(ref(getDatabase(), 'messages/'),
+                              orderByChild('timestamp'),
+                              limitToLast(5));
   // Start listening to the query
   onValue(recentMessageQuery, function(snapshot) {
     snapshot.forEach(function(change) {
 
         var message = change.val();
+        if (message.sender_id == getAuth().currentUser.uid && message.receiver_id == recepient_uid
+        || message.sender_id == recepient_uid && message.receiver_id == getAuth().currentUser.uid) {
         displayMessage(change.key, message.timestamp, message.name,
-          message.text, message.profilePicUrl);
+          message.text, message.profilePicUrl, message.sent, message.received, message.seen,
+          message.sender_id, message.receiver_id);
+        }
     });
   });
 }
 
 // Loads Online Users
 function loadUsers() {
+  // const dbRef = db.ref("users/");
 
-  const onlineUsers = query(ref(getDatabase(), 'users/'), limitToLast(5));
+  const onlineUsers = query(ref(getDatabase(), 'users/'), orderByChild("online"), equalTo(true), limitToLast(5));
   // Start listening to the query
   onValue(onlineUsers, function(snapshot) {
     snapshot.forEach(function(change) {
 
         var user = change.val();
         // console.log(message);
-        console.log(user.uid, 54321, user.name, user.profilePicUrl);
-        displayUsers(user.uid, 54321, user.name, user.profilePicUrl);
+        // console.log(user.uid, null, user.name, user.profilePicUrl);
+        if (user.uid != getAuth().currentUser.uid){
+        displayUsers(user.uid, change.key, user.name, user.profilePicUrl);
+        }
     });
   });
+
+  // dbRef.on("value", snap => {
+  //   console.log(snap);
+  //   console.log(snap.key);
+  // });
+
+  // var loadMessageElements = document.getElementsByTagName('button');
+  // console.log(loadMessageElements);
+  // var messagesLoadButton = loadMessageElements[1];
+  // messagesLoadButton.addEventListener('click', loadMessages(this.id));  
 }
 
 
@@ -180,8 +195,6 @@ function authStateObserver(user) {
     // Hide sign-in button.
     signInButtonElement.setAttribute('hidden', 'true');
 
-    // We save the Firebase Messaging Device token and enable notifications.
-    saveMessagingDeviceToken();
   } else {
     // User is signed out!
     // Hide user's profile and sign-out button.
@@ -240,7 +253,12 @@ function createAndInsertMessage(id, timestamp) {
 }
 
 // Displays a Message in the UI.
-function displayMessage(id, timestamp, name, text, picUrl) {
+function displayMessage(id, timestamp, name, text, picUrl, sent, received, seen,
+                        sender, receiver) {
+  
+  if (receiver == getAuth().currentUser.uid) {
+  update(ref(db, 'messages/' + id ), {received: true});
+  }
   var div =
     document.getElementById(id) || createAndInsertMessage(id, timestamp);
 
@@ -251,14 +269,29 @@ function displayMessage(id, timestamp, name, text, picUrl) {
   }
 
   div.querySelector('.name').textContent = name;
-  var messageElement = div.querySelector('.message');
+  
 
-  if (text) {
-    // If the message is text.
-    messageElement.textContent = text;
-    // Replace all line breaks by <br>.
-    messageElement.innerHTML = messageElement.innerHTML.replace(/\n/g, '<br>');
-  }
+  // var statusElement = div.querySelector('.status');
+  // if (seen == true) {
+  //   // statusElement.textContent = '&#10003;'
+  // } else if (received == true) {
+  //   statusElement.textContent = '\u2713\u2713';
+  // } else if (sent == true) {
+  //   statusElement.textContent = '\u2713';
+
+    var messageElement = div.querySelector('.message');
+
+    if (text) {
+      // If the message is text.
+      if (seen) { text += '\t\u2713\u2713'; } else if (received) {text += '\t\u2713\u2713';} else if (sent) {
+      text += '\t\u2713';
+      }
+      messageElement.textContent = text;
+      // Replace all line breaks by <br>.
+      messageElement.innerHTML = messageElement.innerHTML.replace(/\n/g, '<br>');
+    }
+
+
   // Show the card fading-in and scroll to view the new message.
   setTimeout(function () {
     div.classList.add('visible');
@@ -270,52 +303,23 @@ function displayMessage(id, timestamp, name, text, picUrl) {
 // Create and Insert Users
 function createAndInsertUsers(id, timestamp) {
   const container = document.createElement('div');
-  container.innerHTML = MESSAGE_TEMPLATE;
+  container.innerHTML = USER_TEMPLATE;
   const div = container.firstChild;
   div.setAttribute('id', id);
+  const childnodes = div.childNodes;
 
-  // If timestamp is null, assume we've gotten a brand new message.
-  // https://stackoverflow.com/a/47781432/4816918
-  // timestamp = timestamp;
-  if (timestamp) 
-  {timestamp = timestamp; } else {
-    timestamp = Date.now();
-  }
-  div.setAttribute('timestamp', timestamp);
+  childnodes[1].setAttribute('id', id);
+  childnodes[1].addEventListener('click', loadMessages(id));
 
-  // figure out where to insert new message
-  const existingMessages = userListElement.children;
-  if (existingMessages.length === 0) {
-    userListElement.appendChild(div);
-  } else {
-    let userListNode = existingUsers[0];
-
-    while (userListNode) {
-      const userListNodeTime = userListNode.getAttribute('timestamp');
-
-      if (!userListNodeTime) {
-        throw new Error(
-          `Child ${userListNode.id} has no 'timestamp' attribute`
-        );
-      }
-
-      if (userListNodeTime > timestamp) {
-        break;
-      }
-
-      userListNode = userListNode.nextSibling;
-    }
-
-    userListElement.insertBefore(div, userListNode);
-  }
+  userListElement.appendChild(div);
 
   return div;
 }
 
 // Displays Users in the UI
-function displayUsers(id, timestamp, name, picUrl) {
+function displayUsers(uid, username, name, picUrl) {
   var div =
-    document.getElementById(id) || createAndInsertUsers(id, timestamp);
+    document.getElementById(uid) || createAndInsertUsers(uid, username);
 
   // profile picture
   if (picUrl) {
@@ -323,20 +327,24 @@ function displayUsers(id, timestamp, name, picUrl) {
       'url(' + addSizeToGoogleProfilePic(picUrl) + ')';
   }
 
-  div.querySelector('.name').textContent = name;
-  var nameElement = div.querySelector('.message');
+  // div.querySelector('.name').textContent = name;
+  var nameElement = div.querySelector('.username');
 
 
     // If the message is text.
     nameElement.textContent = name;
     // Replace all line breaks by <br>.
-    nameElement.innerHTML = nameElement.innerHTML.replace(/\n/g, '<br>');
+    // nameElement.innerHTML = nameElement.innerHTML.replace(/\n/g, '<br>');
   
   // Show the card fading-in and scroll to view the new message.
-  setTimeout(function () {
-    div.classList.add('visible');
-  }, 1);
-  userListElement.scrollTop = userListElement.scrollHeight;
+    // var loadMessageElements = document.getElementsByClassName('username');
+    // // console.log(loadMessageElements);
+    //   var messagesLoadButton = loadMessageElements[1];
+    //   messagesLoadButton.addEventListener('click', loadMessages(this.id));
+  // setTimeout(function () {
+  //   div.classList.add('visible');
+  // }, 1);
+  // userListElement.scrollTop = userListElement.scrollHeight;
   // messageInputElement.focus();
 }
 
@@ -368,6 +376,13 @@ var MESSAGE_TEMPLATE =
   '<div class="spacing"><div class="pic"></div></div>' +
   '<div class="message"></div>' +
   '<div class="name"></div>' +
+  '</div>';
+
+var USER_TEMPLATE = 
+  '<div class="user-container">' +
+  '<div class="spacing"><div class="pic"></div></div>' +
+  '<button class="username" onclick="loadMessages(this.id)"></button>' +
+  '<hr>' + 
   '</div>';
 
 // Adds a size to Google Profile pics URLs.
@@ -405,6 +420,7 @@ var signOutButtonElement = document.getElementById('sign-out');
 var signInSnackbarElement = document.getElementById('must-signin-snackbar');
 var userListElement = document.getElementById('user-list');
 
+
 // Saves message on form submit.
 messageFormElement.addEventListener('submit', onMessageFormSubmit);
 signOutButtonElement.addEventListener('click', signOutUser);
@@ -416,15 +432,32 @@ messageInputElement.addEventListener('change', toggleButton);
 
 
 const firebaseAppConfig = getFirebaseConfig();
-// TODO 0: Initialize Firebase
 initializeApp(firebaseAppConfig);
+const db = getDatabase();
+// const dbRefUsers = db.ref('users/');
+// const dbRefMessages = ref(db, 'messages/');
 
-// TODO 12: Initialize Firebase Performance Monitoring
-// getPerformance();
+// dbRefUsers.on("child_added", snap => {
+//   console.log(snap);
+// });
+// dbRefUsers.on("child_deleted", snap => {
+//   console.log(snap);
+// });
+// dbRefUsers.on("child_changed", snap => {
+//   console.log(snap);
+// });
+
+// dbRefUsers.on("value", snap => {
+//   console.log(snap);
+// });
+
+const presentRef = ref(db, 'users/' + getUserName() + 'online');
+onDisconnect(presentRef).set(false);
 
 initFirebaseAuth();
 
 
-
+// if (checkSignedInWithMessage()) {
 // loadMessages();
-// loadUsers();
+loadUsers();
+// }
