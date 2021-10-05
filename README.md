@@ -1,9 +1,5 @@
-Author: Mohd Ali Jauhar
+# Firebase Web Codelab - Start code
 
-Database: Firebase Realtime Database
+This folder contains the starting code for the [Firebase: Build a Real Time Web Chat App Codelab](https://codelabs.developers.google.com/codelabs/firebase-web/).
 
-Auth: Firebase Authentication
-
-Hosted on: Firebase https://friendlychat-46a8d.web.app/ 
-
-Foundation code taken from the Google codelab: https://firebase.google.com/codelabs/firebase-web#0
+If you'd like to jump directly to the end and see the finished code head to the [web](../web) directory.

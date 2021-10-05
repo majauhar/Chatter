@@ -32,6 +32,7 @@ import {
 import { getFirebaseConfig } from './firebase-config.js';
 
 var recepient_uid = 0;
+var userName;
 
 function setRecepientId(recep_id) {
   recepient_uid = recep_id;
@@ -51,6 +52,8 @@ async function signIn() {
     });
   }
   loadUsers();
+  userName = getUserName();
+  
   // loadMessages();
 }
 
@@ -256,9 +259,22 @@ function createAndInsertMessage(id, timestamp) {
 function displayMessage(id, timestamp, name, text, picUrl, sent, received, seen,
                         sender, receiver) {
   
+  if (!received){
   if (receiver == getAuth().currentUser.uid) {
   update(ref(db, 'messages/' + id ), {received: true});
   }
+}
+
+if (!seen){
+  document.addEventListener("visibilitychange", function() {
+    console.log( document.hidden );
+    var tab = document.hidden;
+    if (!tab) {
+      update(ref(db, 'messages/' + id ), {seen: true});
+    }
+  });
+}
+
   var div =
     document.getElementById(id) || createAndInsertMessage(id, timestamp);
 
@@ -283,7 +299,10 @@ function displayMessage(id, timestamp, name, text, picUrl, sent, received, seen,
 
     if (text) {
       // If the message is text.
-      if (seen) { text += '\t\u2713\u2713'; } else if (received) {text += '\t\u2713\u2713';} else if (sent) {
+      if (seen) { 
+        text += '\t\u2714\u2714'; } 
+        
+        else if (received) {text += '\t\u2713\u2713';} else if (sent) {
       text += '\t\u2713';
       }
       messageElement.textContent = text;
@@ -375,13 +394,14 @@ var MESSAGE_TEMPLATE =
   '<div class="message-container">' +
   '<div class="spacing"><div class="pic"></div></div>' +
   '<div class="message"></div>' +
+  '<div class="status"></div>' +
   '<div class="name"></div>' +
   '</div>';
 
 var USER_TEMPLATE = 
   '<div class="user-container">' +
   '<div class="spacing"><div class="pic"></div></div>' +
-  '<button class="username" onclick="loadMessages(this.id)"></button>' +
+  '<button class="username"></button>' +
   '<hr>' + 
   '</div>';
 
@@ -434,6 +454,7 @@ messageInputElement.addEventListener('change', toggleButton);
 const firebaseAppConfig = getFirebaseConfig();
 initializeApp(firebaseAppConfig);
 const db = getDatabase();
+// userName = getUserName();
 // const dbRefUsers = db.ref('users/');
 // const dbRefMessages = ref(db, 'messages/');
 
@@ -451,7 +472,7 @@ const db = getDatabase();
 //   console.log(snap);
 // });
 
-const presentRef = ref(db, 'users/' + getUserName() + 'online');
+const presentRef = ref(db, 'users/' + userName + 'online');
 onDisconnect(presentRef).set(false);
 
 initFirebaseAuth();
@@ -460,4 +481,7 @@ initFirebaseAuth();
 // if (checkSignedInWithMessage()) {
 // loadMessages();
 loadUsers();
+// document.addEventListener("visibilitychange", function() {
+//   console.log( document.hidden );
+// })
 // }
